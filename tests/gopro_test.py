@@ -13,10 +13,14 @@ class TestCaptureGoProPhoto(unittest.TestCase):
     @mock.patch("os.unlink")
     @mock.patch("tempfile.NamedTemporaryFile")
     @mock.patch("gopro.time.sleep")
+    @mock.patch("gopro.socket.create_connection")
     @mock.patch("gopro.requests.get")
     @mock.patch("gopro.requests.post")
-    def test_capture_photo(self, mock_post, mock_get, mock_sleep, mock_tempfile, mock_unlink):
+    def test_capture_photo(self, mock_post, mock_get, mock_create_conn, mock_sleep, mock_tempfile, mock_unlink):
         mock_sleep.return_value = None
+        mock_conn = mock.MagicMock()
+        mock_create_conn.return_value.__enter__.return_value = mock_conn
+        mock_create_conn.return_value.__exit__.return_value = False
         list_resp = mock.Mock()
         list_resp.json.return_value = {
             "id": "1554375628411872255",
@@ -49,10 +53,29 @@ class TestCaptureGoProPhoto(unittest.TestCase):
 
         result = gopro.capture_gopro_photo(ip_address="1.2.3.4", timeout=1, root_ca="CERT")
 
-        mock_post.assert_called_once()
-        called_url = mock_post.call_args[0][0]
-        self.assertEqual(called_url, "https://1.2.3.4/api/v1/command/shutter")
-        self.assertEqual(mock_post.call_args.kwargs["verify"], "/tmp/ca.pem")
+        self.assertEqual(mock_post.call_count, 3)
+        self.assertEqual(
+            mock_post.call_args_list[0][0][0],
+            "https://1.2.3.4/api/v1/camera/setting",
+        )
+        self.assertEqual(
+            mock_post.call_args_list[0].kwargs["json"],
+            {"setting_id": 175, "value": 1},
+        )
+        self.assertEqual(
+            mock_post.call_args_list[1][0][0],
+            "https://1.2.3.4/api/v1/camera/preset",
+        )
+        self.assertEqual(
+            mock_post.call_args_list[1].kwargs["json"],
+            {"preset_id": 65539},
+        )
+        self.assertEqual(
+            mock_post.call_args_list[2][0][0],
+            "https://1.2.3.4/api/v1/command/shutter",
+        )
+        for call in mock_post.call_args_list:
+            self.assertEqual(call.kwargs.get("verify"), "/tmp/ca.pem")
 
         expected_list_url = "https://1.2.3.4/api/v1/media/list"
         expected_photo_url = "https://1.2.3.4/api/v1/media/100GOPRO/GOPR0001.JPG"
